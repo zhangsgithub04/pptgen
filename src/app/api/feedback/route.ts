@@ -126,8 +126,11 @@ Example:
 
     // Regenerate image if title changed significantly or if feedback mentions visuals
     let imageUrl = slide.imageUrl;
+    const improvedTitle = improvedSlide.title || slide.title || 'Slide';
+    const improvedContent = improvedSlide.content || slide.content || '';
+    
     const shouldRegenerateImage = 
-      improvedSlide.title !== slide.title ||
+      improvedTitle !== slide.title ||
       feedback.toLowerCase().includes('visual') ||
       feedback.toLowerCase().includes('image') ||
       feedback.toLowerCase().includes('chart') ||
@@ -135,21 +138,22 @@ Example:
 
     if (shouldRegenerateImage) {
       try {
-        console.log(`Regenerating image for improved slide: ${improvedSlide.title}`);
+        console.log(`Regenerating image for improved slide: ${improvedTitle}`);
         imageUrl = await Promise.race([
-          generateSlideImage(improvedSlide.title, improvedSlide.content),
+          generateSlideImage(improvedTitle, improvedContent),
           new Promise<string>((resolve) => 
-            setTimeout(() => resolve(getPlaceholderImage(improvedSlide.title)), 8000)
+            setTimeout(() => resolve(getPlaceholderImage(improvedTitle)), 8000)
           )
-        ]) || getPlaceholderImage(improvedSlide.title);
+        ]) || getPlaceholderImage(improvedTitle);
       } catch (error) {
         console.error('Image regeneration failed, keeping original:', error);
-        imageUrl = slide.imageUrl || getPlaceholderImage(improvedSlide.title);
+        imageUrl = slide.imageUrl || getPlaceholderImage(improvedTitle);
       }
     }
 
     return {
-      ...improvedSlide,
+      title: improvedTitle,
+      content: improvedContent,
       imageUrl,
       critique: `Applied feedback: "${feedback}"`,
       revision_needed: false

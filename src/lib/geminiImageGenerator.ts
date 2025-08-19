@@ -283,15 +283,18 @@ function createVisualPlaceholder(title: string, description: string): string {
  * Generate basic placeholder image URL as fallback
  */
 export function getPlaceholderImage(title: string): string {
+  // Handle undefined or null title
+  const safeTitle = title || 'Slide';
+  
   const colors = ['3b82f6', '10b981', 'f59e0b', 'ef4444', '8b5cf6', 'ec4899'];
-  const colorIndex = title.length % colors.length;
+  const colorIndex = safeTitle.length % colors.length;
   const bgColor = colors[colorIndex];
   
   const svg = `
     <svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" fill="#${bgColor}"/>
       <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="16" fill="white" text-anchor="middle" dominant-baseline="central">
-        📊 ${title.substring(0, 30)}${title.length > 30 ? '...' : ''}
+        📊 ${safeTitle.substring(0, 30)}${safeTitle.length > 30 ? '...' : ''}
       </text>
     </svg>
   `;

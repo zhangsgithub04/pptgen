@@ -56,9 +56,15 @@ export async function generateSlideImage(slideTitle: string, slideContent: strin
     
     console.log(`⚠️ No valid image response for: "${slideTitle}", using placeholder`);
     return getPlaceholderImage(slideTitle);
-  } catch (error) {
-    console.error(`❌ Error generating image for "${slideTitle}":`, error);
-    // Fallback to placeholder
+  } catch (error: any) {
+    // Check if it's a quota/credits error
+    if (error?.httpResponse?.status === 402 || error?.message?.includes('exceeded')) {
+      console.warn(`💳 API quota exceeded for "${slideTitle}", using placeholder`);
+    } else {
+      console.error(`❌ Error generating image for "${slideTitle}":`, error);
+    }
+    
+    // Always fallback to placeholder on any error
     return getPlaceholderImage(slideTitle);
   }
 }
@@ -67,8 +73,12 @@ export async function generateSlideImage(slideTitle: string, slideContent: strin
  * Create a descriptive prompt for image generation based on slide content
  */
 function createImagePrompt(title: string, content: string): string {
+  // Handle undefined or null values
+  const safeTitle = title || 'Slide';
+  const safeContent = content || '';
+  
   // Extract key concepts from the slide content
-  const concepts = content
+  const concepts = safeContent
     .split('\n')
     .filter(line => line.trim().startsWith('-'))
     .map(line => line.replace(/^-\s*/, '').trim())
@@ -76,7 +86,7 @@ function createImagePrompt(title: string, content: string): string {
     .join(', ');
 
   // Create a professional, presentation-style prompt
-  const basePrompt = `Professional business presentation slide illustration for "${title}". `;
+  const basePrompt = `Professional business presentation slide illustration for "${safeTitle}". `;
   const conceptPrompt = concepts ? `Key concepts: ${concepts}. ` : '';
   const stylePrompt = `Clean, modern, minimalist design. Corporate style. High quality. No text or words in image.`;
 
@@ -87,8 +97,11 @@ function createImagePrompt(title: string, content: string): string {
  * Generate placeholder image URL as fallback (using SVG data URL for PowerPoint compatibility)
  */
 export function getPlaceholderImage(title: string): string {
+  // Handle undefined or null title
+  const safeTitle = title || 'Slide';
+  
   const colors = ['3b82f6', '10b981', 'f59e0b', 'ef4444', '8b5cf6', 'ec4899'];
-  const colorIndex = title.length % colors.length;
+  const colorIndex = safeTitle.length % colors.length;
   const bgColor = colors[colorIndex];
   
   // Create a data URL SVG instead of using external placeholder service
@@ -96,7 +109,7 @@ export function getPlaceholderImage(title: string): string {
     <svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" fill="#${bgColor}"/>
       <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="16" fill="white" text-anchor="middle" dominant-baseline="central">
-        🖼️ ${title.substring(0, 30)}${title.length > 30 ? '...' : ''}
+        🖼️ ${safeTitle.substring(0, 30)}${safeTitle.length > 30 ? '...' : ''}
       </text>
     </svg>
   `;

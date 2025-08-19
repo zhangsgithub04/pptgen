@@ -44,6 +44,13 @@ export const translations = {
     close: 'Close',
     selected: 'Selected',
     
+    // Additional slides
+    addMoreSlides: 'Add More Slides',
+    add2Slides: 'Add 2 More Slides',
+    add3Slides: 'Add 3 More Slides',
+    slideCount: 'Number of Slides',
+    additionalSlidesGenerated: 'Additional slides generated successfully!',
+    
     // Preview navigation
     useArrowKeys: 'Use ← → arrow keys to navigate | Home/End for first/last slide | ESC to close | Click outside to close',
     
@@ -104,6 +111,13 @@ export const translations = {
     exportSlide: '导出幻灯片',
     close: '关闭',
     selected: '已选择',
+    
+    // Additional slides
+    addMoreSlides: '添加更多幻灯片',
+    add2Slides: '添加2张幻灯片',
+    add3Slides: '添加3张幻灯片',
+    slideCount: '幻灯片数量',
+    additionalSlidesGenerated: '附加幻灯片生成成功！',
     
     // Preview navigation
     useArrowKeys: '使用 ← → 箭头键导航 | Home/End 跳转首/末页 | ESC 关闭 | 点击外部关闭',

@@ -6,7 +6,7 @@ import LoginForm from '../components/LoginForm';
 import TemplateSelection, { PresentationTemplate } from '../components/TemplateSelection';
 import SlideFeedback from '../components/SlideFeedback';
 import PPTPreview from '../components/PPTPreview';
-import ThemeSelector, { SystemTheme, getThemeColors, getSystemTheme } from '../components/ThemeSelector';
+import ThemeSelector, { SystemTheme, getThemeColors, getSystemTheme, PPTColorTheme, pptColorThemes, PPTColorSelector } from '../components/ThemeSelector';
 import LanguageSelector from '../components/LanguageSelector';
 import { translations } from '../lib/translations';
 
@@ -82,6 +82,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PresentationTemplate | null>(null);
   const [selectedTheme, setSelectedTheme] = useState<SystemTheme>('system');
+  const [selectedPPTTheme, setSelectedPPTTheme] = useState<PPTColorTheme>('blue');
   const [language, setLanguage] = useState<'en' | 'zh'>('en');
   const [topic, setTopic] = useState('');
   const [imageProvider, setImageProvider] = useState<'huggingface' | 'gemini'>('huggingface');
@@ -92,9 +93,11 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState<number>(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [requestedSlideCount, setRequestedSlideCount] = useState<number>(5);
 
   const t = translations[language];
   const theme = getThemeColors(selectedTheme);
+  const pptTheme = pptColorThemes.find(theme => theme.id === selectedPPTTheme) || pptColorThemes[0];
 
   // Check if user is already authenticated (persist login in session)
   useEffect(() => {
@@ -113,6 +116,12 @@ export default function Home() {
     const savedThemeMode = localStorage.getItem('pptgen_theme') as SystemTheme;
     if (savedThemeMode && ['light', 'dark', 'system'].includes(savedThemeMode)) {
       setSelectedTheme(savedThemeMode);
+    }
+    
+    // Load saved PPT theme preference
+    const savedPPTTheme = localStorage.getItem('pptgen_ppt_theme') as PPTColorTheme;
+    if (savedPPTTheme && pptColorThemes.some(t => t.id === savedPPTTheme)) {
+      setSelectedPPTTheme(savedPPTTheme);
     }
   }, []);
 
@@ -136,6 +145,11 @@ export default function Home() {
   const handleThemeChange = (theme: SystemTheme) => {
     setSelectedTheme(theme);
     localStorage.setItem('pptgen_theme', theme);
+  };
+
+  const handlePPTThemeChange = (pptTheme: PPTColorTheme) => {
+    setSelectedPPTTheme(pptTheme);
+    localStorage.setItem('pptgen_ppt_theme', pptTheme);
   };
 
   const handleLogin = (success: boolean) => {
@@ -243,9 +257,10 @@ export default function Home() {
         body: JSON.stringify({ 
           topic, 
           template: selectedTemplate,
-          theme: selectedTheme,
+          theme: pptTheme,
           language: language,
-          imageProvider 
+          imageProvider,
+          requestedSlideCount: requestedSlideCount
         }),
       });
 
@@ -361,6 +376,78 @@ export default function Home() {
     }
   };
 
+  const requestAdditionalSlides = async (additionalCount: number) => {
+    if (!topic || !selectedTemplate || slides.length === 0) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          topic, 
+          template: selectedTemplate,
+          theme: pptTheme,
+          language: language,
+          imageProvider,
+          additionalSlides: additionalCount,
+          existingSlides: slides
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.error) {
+                throw new Error(data.error);
+              }
+              
+              if (data.slides) {
+                setSlides(prevSlides => [...prevSlides, ...data.slides]);
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse additional slides data:', parseError);
+            }
+          }
+        }
+      }
+
+      setSuccessMessage(t.additionalSlidesGenerated);
+      setTimeout(() => setSuccessMessage(null), 3000);
+
+    } catch (err: any) {
+      console.error('Failed to generate additional slides:', err);
+      setError(`Failed to generate additional slides: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleDownload = () => {
     const pptx = new PptxGenJS();
     
@@ -374,19 +461,19 @@ export default function Home() {
       // Add theme-colored background accent
       pptSlide.addShape('rect', {
         x: 0, y: 0, w: 10, h: 0.1,
-        fill: { color: theme.colors.primary.replace('#', '') }
+        fill: { color: pptTheme.colors.primary.replace('#', '') }
       });
       
       // Add slide number with theme color
       pptSlide.addText(`${index + 1}`, {
         x: 9.2, y: 5.0, w: 0.5, h: 0.3,
-        fontSize: 12, color: theme.colors.textSecondary.replace('#', ''), align: 'center'
+        fontSize: 12, color: pptTheme.colors.textSecondary.replace('#', ''), align: 'center'
       });
       
       // Add title with theme colors
       pptSlide.addText(slide.title, {
         x: 0.5, y: 0.3, w: 9, h: 0.8,
-        fontSize: 28, bold: true, color: theme.colors.primary.replace('#', ''),
+        fontSize: 28, bold: true, color: pptTheme.colors.primary.replace('#', ''),
         align: 'left', valign: 'middle',
         fontFace: 'Arial'
       });
@@ -398,7 +485,7 @@ export default function Home() {
       // Add content with theme colors
       pptSlide.addText(cleanedPoints.join('\n'), {
         x: 0.5, y: 1.5, w: 6, h: 3.5,
-        fontSize: 16, color: theme.colors.text.replace('#', ''),
+        fontSize: 16, color: pptTheme.colors.text.replace('#', ''),
         align: 'left', valign: 'top',
         lineSpacing: 24,
         fontFace: 'Arial'
@@ -549,6 +636,70 @@ export default function Home() {
               onThemeChange={handleThemeChange}
               language={language}
             />
+            
+            {/* PPT Color Theme Selector */}
+            <PPTColorSelector 
+              selectedPPTTheme={selectedPPTTheme}
+              onPPTThemeChange={handlePPTThemeChange}
+              language={language}
+            />
+            
+            {/* Slide Count Control */}
+            <div style={{ marginBottom: '24px' }}>
+              <h3 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                marginBottom: '16px', 
+                color: theme.colors.text 
+              }}>
+                {language === 'en' ? '📊 Number of Slides' : '📊 幻灯片数量'}
+              </h3>
+              
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                justifyContent: 'center',
+                flexWrap: 'wrap'
+              }}>
+                {[5, 6, 7, 8, 9, 10].map((count) => (
+                  <label
+                    key={count}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 12px',
+                      border: requestedSlideCount === count ? `2px solid ${theme.colors.primary}` : `2px solid ${theme.colors.border}`,
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      backgroundColor: requestedSlideCount === count ? theme.colors.primary + '10' : theme.colors.surface,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="slide-count"
+                      value={count}
+                      checked={requestedSlideCount === count}
+                      onChange={() => setRequestedSlideCount(count)}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        accentColor: theme.colors.primary
+                      }}
+                    />
+                    <span style={{
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: requestedSlideCount === count ? theme.colors.primary : theme.colors.text
+                    }}>
+                      {count} {language === 'en' ? 'slides' : '张'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
             
             {/* Instruction Text */}
             <div style={{ 
@@ -862,6 +1013,39 @@ export default function Home() {
               }}>
                 📥 {t.downloadPresentation}
               </Button>
+              
+              {/* Additional Slides Button */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                marginTop: '16px'
+              }}>
+                <Button 
+                  onClick={() => requestAdditionalSlides(2)} 
+                  disabled={isLoading}
+                  style={{ 
+                    background: isLoading ? '#ccc' : `linear-gradient(135deg, ${pptTheme.colors.accent}, ${pptTheme.colors.secondary})`, 
+                    fontSize: '14px', 
+                    padding: '12px 24px',
+                    cursor: isLoading ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isLoading ? '⏳' : '➕'} {t.add2Slides}
+                </Button>
+                <Button 
+                  onClick={() => requestAdditionalSlides(3)} 
+                  disabled={isLoading}
+                  style={{ 
+                    background: isLoading ? '#ccc' : `linear-gradient(135deg, ${pptTheme.colors.accent}, ${pptTheme.colors.secondary})`, 
+                    fontSize: '14px', 
+                    padding: '12px 24px',
+                    cursor: isLoading ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isLoading ? '⏳' : '➕'} {t.add3Slides}
+                </Button>
+              </div>
             </div>
           )}
 
