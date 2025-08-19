@@ -15,7 +15,9 @@ interface Slide {
 
 interface GraphState {
   topic: string;
-  template: string;
+  template: any;
+  theme?: any;
+  language: string;
   imageProvider: string;
   outline: string[];
   slides: Slide[];
@@ -31,25 +33,49 @@ const getLLM = () => {
  * Generates the presentation outline based on the topic.
  */
 const generateOutline = async (state: GraphState): Promise<GraphState> => {
+  const isChineseMode = state.language === 'zh';
+  const templatePrefix = state.template?.promptPrefix || state.template?.promptPrefixCN || 'Create a presentation about';
+  
   const prompt = ChatPromptTemplate.fromTemplate(
-    `You are a professional presentation expert. Create a compelling outline for a presentation on "{topic}".
+    isChineseMode 
+      ? `你是一位专业的演示专家。为主题"{topic}"创建一个引人注目的大纲。
+
+使用模板指导：{templatePrefix}
+
+生成5-7个幻灯片标题，要求：
+- 简洁且引人入胜（每个最多6个词）
+- 从介绍到结论遵循逻辑流程
+- 适合专业商务受众
+- 全面覆盖关键方面
+
+包括：介绍、2-3个核心概念幻灯片、应用/优势、挑战/考虑因素和结论。
+
+重要：仅回复有效的JSON数组。不要添加其他文本或解释。
+
+示例：["主题介绍", "核心原理", "关键应用", "当前挑战", "未来展望", "总结"]`
+      : `You are a professional presentation expert. Create a compelling outline for a presentation on "{topic}".
     
-    Generate 5-7 slide titles that:
-    - Are concise and engaging (max 6 words each)
-    - Follow a logical flow from introduction to conclusion
-    - Are suitable for a professional business audience
-    - Cover key aspects comprehensively
-    
-    Include: Introduction, 2-3 core concept slides, applications/benefits, challenges/considerations, and conclusion.
-    
-    IMPORTANT: Respond ONLY with a valid JSON array. No additional text or explanations.
-    
-    Example: ["Introduction to Topic", "Core Principles", "Key Applications", "Current Challenges", "Future Outlook", "Conclusion"]`
+Template guidance: {templatePrefix}
+
+Generate 5-7 slide titles that:
+- Are concise and engaging (max 6 words each)
+- Follow a logical flow from introduction to conclusion
+- Are suitable for a professional business audience
+- Cover key aspects comprehensively
+
+Include: Introduction, 2-3 core concept slides, applications/benefits, challenges/considerations, and conclusion.
+
+IMPORTANT: Respond ONLY with a valid JSON array. No additional text or explanations.
+
+Example: ["Introduction to Topic", "Core Principles", "Key Applications", "Current Challenges", "Future Outlook", "Conclusion"]`
   );
   const chain = prompt.pipe(getLLM()).pipe(new JsonOutputParser<string[]>());
   
   try {
-    const outline = await chain.invoke({ topic: state.topic });
+    const outline = await chain.invoke({ 
+      topic: state.topic,
+      templatePrefix: isChineseMode ? state.template?.promptPrefixCN : state.template?.promptPrefix
+    });
     
     // Validate we got an array
     if (!Array.isArray(outline) || outline.length === 0) {
@@ -77,28 +103,48 @@ const generateOutline = async (state: GraphState): Promise<GraphState> => {
  * Generates the content for the current slide.
  */
 const generateSlideContent = async (state: GraphState): Promise<GraphState> => {
-  const { outline, current_slide, topic } = state;
+  const { outline, current_slide, topic, language } = state;
   const slide_title = outline[current_slide];
+  const isChineseMode = language === 'zh';
 
   const prompt = ChatPromptTemplate.fromTemplate(
-    `Generate professional presentation slide content.
-    Topic: {topic}
-    Slide Title: {slide_title}
-    
-    Create a well-structured slide with:
-    - A clear, engaging title (max 8 words)
-    - 3-5 concise bullet points (each 10-15 words max)
-    - Professional, informative content suitable for business presentation
-    
-    IMPORTANT: Respond ONLY with valid JSON. No additional text, explanations, or formatting.
-    
-    Format as JSON with "title" and "content" keys. Content should be bullet points separated by newlines, each starting with "-".
-    
-    Example:
-    {{
-      "title": "Key Benefits of Technology",
-      "content": "- Increases productivity and efficiency across teams\n- Reduces operational costs by 30-40%\n- Improves customer satisfaction and engagement\n- Enables data-driven decision making\n- Scales easily with business growth"
-    }}`
+    isChineseMode
+      ? `为专业演示生成幻灯片内容。
+主题：{topic}
+幻灯片标题：{slide_title}
+
+创建结构良好的幻灯片，包含：
+- 清晰、引人入胜的标题（最多8个词）
+- 3-5个简洁的要点（每个最多10-15个词）
+- 适合商务演示的专业、信息丰富的内容
+
+重要：仅回复有效的JSON。不要添加其他文本、解释或格式。
+
+格式为包含"title"和"content"键的JSON。内容应为用换行符分隔的要点，每个以"-"开头。
+
+示例：
+{{
+  "title": "技术的主要优势",
+  "content": "- 提高团队生产力和效率\n- 降低运营成本30-40%\n- 改善客户满意度和参与度\n- 支持数据驱动决策\n- 随业务增长轻松扩展"
+}}`
+      : `Generate professional presentation slide content.
+Topic: {topic}
+Slide Title: {slide_title}
+
+Create a well-structured slide with:
+- A clear, engaging title (max 8 words)
+- 3-5 concise bullet points (each 10-15 words max)
+- Professional, informative content suitable for business presentation
+
+IMPORTANT: Respond ONLY with valid JSON. No additional text, explanations, or formatting.
+
+Format as JSON with "title" and "content" keys. Content should be bullet points separated by newlines, each starting with "-".
+
+Example:
+{{
+  "title": "Key Benefits of Technology",
+  "content": "- Increases productivity and efficiency across teams\n- Reduces operational costs by 30-40%\n- Improves customer satisfaction and engagement\n- Enables data-driven decision making\n- Scales easily with business growth"
+}}`
   );
   const chain = prompt.pipe(getLLM()).pipe(new JsonOutputParser<Omit<Slide, 'critique'>>());
   
@@ -267,10 +313,12 @@ const moveToNextSlide = (state: GraphState): GraphState => {
 
 // Simplified app implementation without LangGraph for now
 export const app = {
-  async *stream(inputs: Pick<GraphState, 'topic' | 'template' | 'imageProvider'>) {
+  async *stream(inputs: Pick<GraphState, 'topic' | 'template' | 'theme' | 'language' | 'imageProvider'>) {
     let state: GraphState = {
       topic: inputs.topic,
       template: inputs.template || 'modern',
+      theme: inputs.theme,
+      language: inputs.language || 'en',
       imageProvider: inputs.imageProvider || 'huggingface',
       outline: [],
       slides: [],

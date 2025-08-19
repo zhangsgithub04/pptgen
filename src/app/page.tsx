@@ -6,6 +6,9 @@ import LoginForm from '../components/LoginForm';
 import TemplateSelection, { PresentationTemplate } from '../components/TemplateSelection';
 import SlideFeedback from '../components/SlideFeedback';
 import PPTPreview from '../components/PPTPreview';
+import ThemeSelector, { Theme, themes } from '../components/ThemeSelector';
+import LanguageSelector from '../components/LanguageSelector';
+import { translations } from '../lib/translations';
 
 // --- Shadcn UI Components (placeholders, you would install these) ---
 // To keep this file self-contained, we'll use basic HTML elements.
@@ -78,6 +81,8 @@ interface Slide {
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PresentationTemplate | null>(null);
+  const [selectedTheme, setSelectedTheme] = useState<Theme>(themes[0]);
+  const [language, setLanguage] = useState<'en' | 'zh'>('en');
   const [topic, setTopic] = useState('');
   const [imageProvider, setImageProvider] = useState<'huggingface' | 'gemini'>('huggingface');
   const [slides, setSlides] = useState<Slide[]>([]);
@@ -88,11 +93,28 @@ export default function Home() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
+  const t = translations[language];
+
   // Check if user is already authenticated (persist login in session)
   useEffect(() => {
     const authStatus = sessionStorage.getItem('pptgen_authenticated');
     if (authStatus === 'true') {
       setIsAuthenticated(true);
+    }
+    
+    // Load saved language preference
+    const savedLanguage = localStorage.getItem('pptgen_language') as 'en' | 'zh';
+    if (savedLanguage) {
+      setLanguage(savedLanguage);
+    }
+    
+    // Load saved theme preference
+    const savedThemeId = localStorage.getItem('pptgen_theme');
+    if (savedThemeId) {
+      const savedTheme = themes.find(theme => theme.id === savedThemeId);
+      if (savedTheme) {
+        setSelectedTheme(savedTheme);
+      }
     }
   }, []);
 
@@ -107,6 +129,16 @@ export default function Home() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showPreview]);
+
+  const handleLanguageChange = (lang: 'en' | 'zh') => {
+    setLanguage(lang);
+    localStorage.setItem('pptgen_language', lang);
+  };
+
+  const handleThemeChange = (theme: Theme) => {
+    setSelectedTheme(theme);
+    localStorage.setItem('pptgen_theme', theme.id);
+  };
 
   const handleLogin = (success: boolean) => {
     if (success) {
@@ -211,9 +243,11 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          topic: enhancedTopic,
-          template: selectedTemplate.id,
-          imageProvider: imageProvider
+          topic, 
+          template: selectedTemplate,
+          theme: selectedTheme,
+          language: language,
+          imageProvider 
         }),
       });
 
@@ -339,29 +373,37 @@ export default function Home() {
     slides.forEach((slide, index) => {
       const pptSlide = pptx.addSlide();
       
-      // Add slide number
-      pptSlide.addText(`${index + 1}`, {
-        x: 9.2, y: 5.0, w: 0.5, h: 0.3,
-        fontSize: 12, color: '666666', align: 'center'
+      // Add theme-colored background accent
+      pptSlide.addShape('rect', {
+        x: 0, y: 0, w: 10, h: 0.1,
+        fill: { color: selectedTheme.colors.primary.replace('#', '') }
       });
       
-      // Add title with better formatting
+      // Add slide number with theme color
+      pptSlide.addText(`${index + 1}`, {
+        x: 9.2, y: 5.0, w: 0.5, h: 0.3,
+        fontSize: 12, color: selectedTheme.colors.textSecondary.replace('#', ''), align: 'center'
+      });
+      
+      // Add title with theme colors
       pptSlide.addText(slide.title, {
         x: 0.5, y: 0.3, w: 9, h: 0.8,
-        fontSize: 28, bold: true, color: '1f2937',
-        align: 'left', valign: 'middle'
+        fontSize: 28, bold: true, color: selectedTheme.colors.primary.replace('#', ''),
+        align: 'left', valign: 'middle',
+        fontFace: selectedTheme.fonts.title
       });
       
       // Split content into bullet points and format properly
       const bulletPoints = slide.content.split('\n').filter(point => point.trim().startsWith('-'));
       const cleanedPoints = bulletPoints.map(point => point.replace(/^-\s*/, '• '));
       
-      // Add content with proper formatting
+      // Add content with theme colors
       pptSlide.addText(cleanedPoints.join('\n'), {
         x: 0.5, y: 1.5, w: 6, h: 3.5,
-        fontSize: 16, color: '374151',
+        fontSize: 16, color: selectedTheme.colors.text.replace('#', ''),
         align: 'left', valign: 'top',
-        lineSpacing: 24
+        lineSpacing: 24,
+        fontFace: selectedTheme.fonts.content
       });
       
       // Add image to slide
@@ -416,12 +458,24 @@ export default function Home() {
 
   return (
     <>
+      {/* Language Selector - Always visible */}
+      <LanguageSelector 
+        language={language} 
+        onLanguageChange={handleLanguageChange} 
+      />
+
       {!isAuthenticated ? (
-        <LoginForm onLogin={handleLogin} />
+        <LoginForm onLogin={handleLogin} language={language} />
       ) : !selectedTemplate ? (
-        <TemplateSelection onSelectTemplate={handleTemplateSelect} />
+        <TemplateSelection onSelectTemplate={handleTemplateSelect} language={language} />
       ) : (
-        <main style={{ maxWidth: '1200px', margin: 'auto', padding: '32px 24px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <main style={{ 
+          maxWidth: '1200px', 
+          margin: 'auto', 
+          padding: '32px 24px', 
+          fontFamily: selectedTheme.fonts.content,
+          color: selectedTheme.colors.text
+        }}>
           {/* Header with template info and logout */}
           <div style={{ 
             display: 'flex', 
@@ -429,7 +483,7 @@ export default function Home() {
             alignItems: 'center', 
             marginBottom: '32px',
             padding: '16px 24px',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: `linear-gradient(135deg, ${selectedTheme.colors.primary}, ${selectedTheme.colors.secondary})`,
             borderRadius: '12px',
             color: 'white'
           }}>
@@ -454,7 +508,7 @@ export default function Home() {
                   fontSize: '14px'
                 }}
               >
-                ← Templates
+                ← {language === 'en' ? 'Templates' : '模板'}
               </button>
               <button
                 onClick={handleLogout}
@@ -468,32 +522,59 @@ export default function Home() {
                   fontSize: '14px'
                 }}
               >
-                🔒 Logout
+                🔒 {language === 'en' ? 'Logout' : '退出'}
               </button>
             </div>
           </div>
 
           <div style={{ textAlign: 'center', marginBottom: '48px' }}>
-            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1a202c', marginBottom: '12px' }}>
-              PPTGen: AI Presentation Generator
+            <h1 style={{ 
+              fontSize: '36px', 
+              fontWeight: '700', 
+              color: selectedTheme.colors.text, 
+              marginBottom: '12px',
+              fontFamily: selectedTheme.fonts.title
+            }}>
+              🎯 {t.title}
             </h1>
-            <p style={{ fontSize: '18px', color: '#718096', marginBottom: '32px' }}>
-              Generate professional presentations with AI-powered content and critiques
+            <p style={{ 
+              fontSize: '18px', 
+              color: selectedTheme.colors.textSecondary, 
+              marginBottom: '32px' 
+            }}>
+              {t.subtitle}
             </p>
+            
+            {/* Theme Selector */}
+            <ThemeSelector 
+              selectedTheme={selectedTheme}
+              onThemeChange={handleThemeChange}
+              language={language}
+            />
             
             <form onSubmit={handleSubmit} style={{ maxWidth: '600px', margin: '0 auto' }}>
               <Input
                 type="text"
                 value={topic}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTopic(e.target.value)}
-                placeholder={`Enter your ${selectedTemplate.name.toLowerCase()} topic...`}
+                placeholder={t.topicPlaceholder}
                 disabled={isLoading}
+                style={{
+                  borderColor: selectedTheme.colors.primary,
+                  color: selectedTheme.colors.text
+                }}
               />
               
               {/* Image Provider Selection */}
               <div style={{ marginBottom: '16px', textAlign: 'left' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-                  🎨 Image Generation Provider:
+                <label style={{ 
+                  display: 'block', 
+                  fontSize: '14px', 
+                  fontWeight: '500', 
+                  color: selectedTheme.colors.text, 
+                  marginBottom: '8px' 
+                }}>
+                  🎨 {t.imageProvider}:
                 </label>
                 <div style={{ display: 'flex', gap: '16px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
@@ -505,7 +586,7 @@ export default function Home() {
                       onChange={(e) => setImageProvider(e.target.value as 'huggingface' | 'gemini')}
                       disabled={isLoading}
                     />
-                    <span style={{ fontSize: '14px', color: '#4a5568' }}>🤗 Hugging Face (FLUX Model)</span>
+                    <span style={{ fontSize: '14px', color: selectedTheme.colors.textSecondary }}>🤗 {t.huggingface}</span>
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                     <input
@@ -516,10 +597,10 @@ export default function Home() {
                       onChange={(e) => setImageProvider(e.target.value as 'huggingface' | 'gemini')}
                       disabled={isLoading}
                     />
-                    <span style={{ fontSize: '14px', color: '#4a5568' }}>🔮 Gemini + Vertex AI Imagen</span>
+                    <span style={{ fontSize: '14px', color: selectedTheme.colors.textSecondary }}>🔮 {t.gemini}</span>
                   </label>
                 </div>
-                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                <p style={{ fontSize: '12px', color: selectedTheme.colors.textSecondary, marginTop: '4px' }}>
                   {imageProvider === 'huggingface' 
                     ? 'Uses Hugging Face FLUX model for realistic image generation'
                     : 'Uses Gemini for enhanced prompts with Vertex AI Imagen for image generation'
@@ -527,8 +608,16 @@ export default function Home() {
                 </p>
               </div>
               
-              <Button type="submit" disabled={isLoading || !topic.trim()}>
-                {isLoading ? '🔄 Generating...' : `✨ Generate ${selectedTemplate.name}`}
+              <Button 
+                type="submit" 
+                disabled={isLoading || !topic.trim()}
+                style={{
+                  background: `linear-gradient(135deg, ${selectedTheme.colors.primary}, ${selectedTheme.colors.secondary})`,
+                  color: 'white',
+                  border: 'none'
+                }}
+              >
+                {isLoading ? `🔄 ${t.generating}` : `✨ ${t.generatePresentation}`}
               </Button>
             </form>
           </div>
@@ -636,7 +725,7 @@ export default function Home() {
                 <div style={{ flex: 1 }}>
                   <CardHeader>
                     <span style={{ 
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                      background: `linear-gradient(135deg, ${selectedTheme.colors.primary}, ${selectedTheme.colors.secondary})`, 
                       color: 'white', 
                       padding: '4px 12px', 
                       borderRadius: '20px', 
@@ -644,14 +733,14 @@ export default function Home() {
                       fontWeight: '500', 
                       marginRight: '12px' 
                     }}>
-                      Slide {index + 1}
+                      {t.slide} {index + 1}
                     </span>
                     {slide.title}
                     {Date.now() - lastUpdated < 2000 && (
                       <span style={{
                         marginLeft: '8px',
                         padding: '2px 8px',
-                        background: '#38a169',
+                        background: selectedTheme.colors.accent,
                         color: 'white',
                         fontSize: '12px',
                         borderRadius: '12px',
@@ -692,18 +781,18 @@ export default function Home() {
           {slides.length > 0 && !isLoading && (
             <div style={{ textAlign: 'center', marginTop: '40px', display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <Button onClick={() => setShowPreview(true)} style={{ 
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+                background: `linear-gradient(135deg, ${selectedTheme.colors.accent}, #059669)`, 
                 fontSize: '18px', 
                 padding: '16px 32px' 
               }}>
-                👁️ Preview Presentation ({slides.length} slides)
+                👁️ {t.previewPresentation} ({slides.length} slides)
               </Button>
               <Button onClick={handleDownload} style={{ 
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                background: `linear-gradient(135deg, ${selectedTheme.colors.primary}, ${selectedTheme.colors.secondary})`, 
                 fontSize: '18px', 
                 padding: '16px 32px' 
               }}>
-                📥 Download Presentation
+                📥 {t.downloadPresentation}
               </Button>
             </div>
           )}

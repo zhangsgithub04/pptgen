@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from 'react';
+import { translations } from '../lib/translations';
 
 interface LoginFormProps {
   onLogin: (success: boolean) => void;
+  language?: 'en' | 'zh';
 }
 
 const Button = ({ children, ...props }: { children: React.ReactNode; [key: string]: any }) => (
@@ -41,9 +43,10 @@ const Input = (props: any) => (
   />
 );
 
-export default function LoginForm({ onLogin }: LoginFormProps) {
+export default function LoginForm({ onLogin, language = 'en' }: LoginFormProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const t = translations[language];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +54,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
       onLogin(true);
       setError('');
     } else {
-      setError('Invalid password. Please try again.');
+      setError(t.incorrectPassword);
       onLogin(false);
     }
   };
@@ -81,13 +84,13 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
             color: '#1a202c', 
             marginBottom: '8px' 
           }}>
-            🎯 PPTGen Access
+            🎯 {t.title}
           </h1>
           <p style={{ 
             fontSize: '16px', 
             color: '#718096' 
           }}>
-            Enter password to access the AI presentation generator
+            {t.subtitle}
           </p>
         </div>
 
@@ -96,7 +99,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
             type="password"
             value={password}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-            placeholder="Enter access password"
+            placeholder={t.password}
             autoFocus
           />
           
@@ -115,7 +118,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
           )}
 
           <Button type="submit">
-            🔓 Access PPTGen
+            🔓 {t.login}
           </Button>
         </form>
 

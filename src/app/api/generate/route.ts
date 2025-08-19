@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   try {
-    const { topic, template, imageProvider } = await req.json();
+    const { topic, template, theme, language, imageProvider } = await req.json();
 
     if (!topic) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
@@ -13,12 +13,14 @@ export async function POST(req: NextRequest) {
     const inputs = {
       topic,
       template: template || 'modern', // Default to modern template
+      theme: theme || null, // Theme information
+      language: language || 'en', // Language preference
       imageProvider: imageProvider || 'huggingface', // Default to Hugging Face
       slides: [], // Start with empty slides
       current_slide: 0, // Start at the first slide
     };
 
-    console.log(`Starting presentation generation for topic: ${topic}, template: ${template}, imageProvider: ${imageProvider}`);
+    console.log(`Starting presentation generation for topic: ${topic}, template: ${template?.name}, theme: ${theme?.name}, language: ${language}, imageProvider: ${imageProvider}`);
 
     // We will stream the output of the graph back to the client.
     const stream = await app.stream(inputs);
