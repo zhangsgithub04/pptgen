@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import PptxGenJS from 'pptxgenjs';
+import LoginForm from '../components/LoginForm';
+import TemplateSelection, { PresentationTemplate } from '../components/TemplateSelection';
+import SlideFeedback from '../components/SlideFeedback';
 
 // --- Shadcn UI Components (placeholders, you would install these) ---
 // To keep this file self-contained, we'll use basic HTML elements.
@@ -72,24 +75,109 @@ interface Slide {
 }
 
 export default function Home() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<PresentationTemplate | null>(null);
   const [topic, setTopic] = useState('');
+  const [imageProvider, setImageProvider] = useState<'huggingface' | 'gemini'>('huggingface');
   const [slides, setSlides] = useState<Slide[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isProcessingFeedback, setIsProcessingFeedback] = useState(false);
+
+  // Check if user is already authenticated (persist login in session)
+  useEffect(() => {
+    const authStatus = sessionStorage.getItem('pptgen_authenticated');
+    if (authStatus === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = (success: boolean) => {
+    if (success) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('pptgen_authenticated', 'true');
+    }
+  };
+
+  const handleTemplateSelect = (template: PresentationTemplate) => {
+    setSelectedTemplate(template);
+  };
+
+  const handleBackToTemplates = () => {
+    setSelectedTemplate(null);
+    setTopic('');
+    setImageProvider('huggingface');
+    setSlides([]);
+    setError(null);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setSelectedTemplate(null);
+    setTopic('');
+    setImageProvider('huggingface');
+    setSlides([]);
+    setError(null);
+    sessionStorage.removeItem('pptgen_authenticated');
+  };
+
+  const handleApplyFeedback = async (feedback: string, slideIndex?: number) => {
+    if (!feedback.trim() || slides.length === 0) return;
+
+    setIsProcessingFeedback(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slides,
+          feedback,
+          slideIndex,
+          template: selectedTemplate ? {
+            name: selectedTemplate.name,
+            promptPrefix: selectedTemplate.promptPrefix
+          } : undefined
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      setSlides(result.slides);
+
+    } catch (err: any) {
+      console.error('Feedback processing failed:', err);
+      setError(`Failed to apply feedback: ${err.message}`);
+    } finally {
+      setIsProcessingFeedback(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!topic) return;
+    if (!topic || !selectedTemplate) return;
 
     setSlides([]);
     setError(null);
     setIsLoading(true);
 
     try {
+      // Combine template prompt with user topic
+      const enhancedTopic = `${selectedTemplate.promptPrefix} ${topic}`;
+      
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic }),
+        body: JSON.stringify({ 
+          topic: enhancedTopic,
+          template: selectedTemplate.id,
+          imageProvider: imageProvider
+        }),
       });
 
       if (!response.ok) {
@@ -277,8 +365,8 @@ export default function Home() {
         });
       }
       
-      // Add footer with topic
-      pptSlide.addText(topic, {
+      // Add footer with topic and template
+      pptSlide.addText(`${topic} • ${selectedTemplate?.name || 'Custom Template'}`, {
         x: 0.5, y: 5.0, w: 8, h: 0.3,
         fontSize: 10, color: '9ca3af', italic: true
       });
@@ -290,124 +378,254 @@ export default function Home() {
   };
 
   return (
-    <main style={{ maxWidth: '1200px', margin: 'auto', padding: '32px 24px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      <div style={{ textAlign: 'center', marginBottom: '48px' }}>
-        <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1a202c', marginBottom: '12px' }}>
-          PPTGen: AI Presentation Generator
-        </h1>
-        <p style={{ fontSize: '18px', color: '#718096', marginBottom: '32px' }}>
-          Generate professional presentations with AI-powered content and critiques
-        </p>
-        
-        <form onSubmit={handleSubmit} style={{ maxWidth: '600px', margin: '0 auto' }}>
-          <Input
-            type="text"
-            value={topic}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTopic(e.target.value)}
-            placeholder="Enter your presentation topic (e.g., Quantum Computing, Machine Learning)..."
-            disabled={isLoading}
-          />
-          <Button type="submit" disabled={isLoading || !topic.trim()}>
-            {isLoading ? '🔄 Generating...' : '✨ Generate Presentation'}
-          </Button>
-        </form>
-      </div>
-
-      {error && (
-        <div style={{ 
-          background: '#fed7d7', 
-          border: '1px solid #fc8181', 
-          color: '#c53030', 
-          padding: '16px', 
-          borderRadius: '8px', 
-          marginBottom: '24px',
-          textAlign: 'center'
-        }}>
-          {error}
-        </div>
-      )}
-
-      {isLoading && (
-        <div style={{ textAlign: 'center', margin: '40px 0' }}>
-          <div style={{ fontSize: '18px', color: '#4a5568', marginBottom: '16px' }}>
-            🤖 AI is crafting your presentation...
-          </div>
+    <>
+      {!isAuthenticated ? (
+        <LoginForm onLogin={handleLogin} />
+      ) : !selectedTemplate ? (
+        <TemplateSelection onSelectTemplate={handleTemplateSelect} />
+      ) : (
+        <main style={{ maxWidth: '1200px', margin: 'auto', padding: '32px 24px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          {/* Header with template info and logout */}
           <div style={{ 
-            width: '200px', 
-            height: '4px', 
-            background: '#e2e8f0', 
-            borderRadius: '2px', 
-            margin: '0 auto',
-            overflow: 'hidden'
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            marginBottom: '32px',
+            padding: '16px 24px',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderRadius: '12px',
+            color: 'white'
           }}>
-            <div style={{ 
-              width: '30%', 
-              height: '100%', 
-              background: 'linear-gradient(90deg, #4299e1, #63b3ed)', 
-              borderRadius: '2px',
-              animation: 'loading 2s infinite ease-in-out'
-            }}></div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ marginTop: '48px' }}>
-        {slides.map((slide, index) => (
-          <Card key={index}>
-            <SlideImage title={slide.title} imageUrl={slide.imageUrl} />
-            <div style={{ flex: 1 }}>
-              <CardHeader>
-                <span style={{ 
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
-                  color: 'white', 
-                  padding: '4px 12px', 
-                  borderRadius: '20px', 
-                  fontSize: '14px', 
-                  fontWeight: '500', 
-                  marginRight: '12px' 
-                }}>
-                  Slide {index + 1}
-                </span>
-                {slide.title}
-              </CardHeader>
-              <CardContent>{slide.content}</CardContent>
-              {slide.critique && (
-                <div style={{ 
-                  marginTop: '16px', 
-                  padding: '12px', 
-                  background: '#f7fafc', 
-                  borderLeft: '4px solid #4299e1', 
-                  borderRadius: '0 8px 8px 0',
-                  fontSize: '14px',
-                  color: '#2d3748'
-                }}>
-                  <strong>💡 AI Critique:</strong> {slide.critique}
-                </div>
-              )}
+            <div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '600' }}>
+                {selectedTemplate.icon} {selectedTemplate.name} Template
+              </h2>
+              <p style={{ margin: '4px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
+                {selectedTemplate.description}
+              </p>
             </div>
-          </Card>
-        ))}
-      </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleBackToTemplates}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                ← Templates
+              </button>
+              <button
+                onClick={handleLogout}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                🔒 Logout
+              </button>
+            </div>
+          </div>
 
-      {slides.length > 0 && !isLoading && (
-        <div style={{ textAlign: 'center', marginTop: '40px' }}>
-          <Button onClick={handleDownload} style={{ 
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
-            fontSize: '18px', 
-            padding: '16px 32px' 
-          }}>
-            📥 Download Presentation ({slides.length} slides)
-          </Button>
-        </div>
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1a202c', marginBottom: '12px' }}>
+              PPTGen: AI Presentation Generator
+            </h1>
+            <p style={{ fontSize: '18px', color: '#718096', marginBottom: '32px' }}>
+              Generate professional presentations with AI-powered content and critiques
+            </p>
+            
+            <form onSubmit={handleSubmit} style={{ maxWidth: '600px', margin: '0 auto' }}>
+              <Input
+                type="text"
+                value={topic}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTopic(e.target.value)}
+                placeholder={`Enter your ${selectedTemplate.name.toLowerCase()} topic...`}
+                disabled={isLoading}
+              />
+              
+              {/* Image Provider Selection */}
+              <div style={{ marginBottom: '16px', textAlign: 'left' }}>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                  🎨 Image Generation Provider:
+                </label>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="imageProvider"
+                      value="huggingface"
+                      checked={imageProvider === 'huggingface'}
+                      onChange={(e) => setImageProvider(e.target.value as 'huggingface' | 'gemini')}
+                      disabled={isLoading}
+                    />
+                    <span style={{ fontSize: '14px', color: '#4a5568' }}>🤗 Hugging Face (FLUX Model)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="imageProvider"
+                      value="gemini"
+                      checked={imageProvider === 'gemini'}
+                      onChange={(e) => setImageProvider(e.target.value as 'huggingface' | 'gemini')}
+                      disabled={isLoading}
+                    />
+                    <span style={{ fontSize: '14px', color: '#4a5568' }}>🔮 Gemini + Vertex AI Imagen</span>
+                  </label>
+                </div>
+                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                  {imageProvider === 'huggingface' 
+                    ? 'Uses Hugging Face FLUX model for realistic image generation'
+                    : 'Uses Gemini for enhanced prompts with Vertex AI Imagen for image generation'
+                  }
+                </p>
+              </div>
+              
+              <Button type="submit" disabled={isLoading || !topic.trim()}>
+                {isLoading ? '🔄 Generating...' : `✨ Generate ${selectedTemplate.name}`}
+              </Button>
+            </form>
+          </div>
+
+          {error && (
+            <div style={{ 
+              background: '#fed7d7', 
+              border: '1px solid #fc8181', 
+              color: '#c53030', 
+              padding: '16px', 
+              borderRadius: '8px', 
+              marginBottom: '24px',
+              textAlign: 'center'
+            }}>
+              {error}
+            </div>
+          )}
+
+          {isLoading && (
+            <div style={{ textAlign: 'center', margin: '40px 0' }}>
+              <div style={{ fontSize: '18px', color: '#4a5568', marginBottom: '16px' }}>
+                🤖 AI is crafting your {selectedTemplate.name.toLowerCase()} presentation...
+              </div>
+              <div style={{ 
+                width: '200px', 
+                height: '4px', 
+                background: '#e2e8f0', 
+                borderRadius: '2px', 
+                margin: '0 auto',
+                overflow: 'hidden'
+              }}>
+                <div style={{ 
+                  width: '30%', 
+                  height: '100%', 
+                  background: 'linear-gradient(90deg, #4299e1, #63b3ed)', 
+                  borderRadius: '2px',
+                  animation: 'loading 2s infinite ease-in-out'
+                }}></div>
+              </div>
+            </div>
+          )}
+
+          {isProcessingFeedback && (
+            <div style={{ textAlign: 'center', margin: '40px 0' }}>
+              <div style={{ fontSize: '18px', color: '#4a5568', marginBottom: '16px' }}>
+                🤝 AI is processing your feedback and improving the slides...
+              </div>
+              <div style={{ 
+                width: '200px', 
+                height: '4px', 
+                background: '#e2e8f0', 
+                borderRadius: '2px', 
+                margin: '0 auto',
+                overflow: 'hidden'
+              }}>
+                <div style={{ 
+                  width: '30%', 
+                  height: '100%', 
+                  background: 'linear-gradient(90deg, #38b2ac, #4fd1c7)', 
+                  borderRadius: '2px',
+                  animation: 'loading 2s infinite ease-in-out'
+                }}></div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: '48px' }}>
+            {slides.map((slide, index) => (
+              <Card key={index}>
+                <SlideImage title={slide.title} imageUrl={slide.imageUrl} />
+                <div style={{ flex: 1 }}>
+                  <CardHeader>
+                    <span style={{ 
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                      color: 'white', 
+                      padding: '4px 12px', 
+                      borderRadius: '20px', 
+                      fontSize: '14px', 
+                      fontWeight: '500', 
+                      marginRight: '12px' 
+                    }}>
+                      Slide {index + 1}
+                    </span>
+                    {slide.title}
+                  </CardHeader>
+                  <CardContent>{slide.content}</CardContent>
+                  {slide.critique && (
+                    <div style={{ 
+                      marginTop: '16px', 
+                      padding: '12px', 
+                      background: '#f7fafc', 
+                      borderLeft: '4px solid #4299e1', 
+                      borderRadius: '0 8px 8px 0',
+                      fontSize: '14px',
+                      color: '#2d3748'
+                    }}>
+                      <strong>💡 AI Critique:</strong> {slide.critique}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* Human-in-the-Loop Feedback Component */}
+          {slides.length > 0 && !isLoading && (
+            <SlideFeedback 
+              slides={slides} 
+              onApplyFeedback={handleApplyFeedback}
+              isProcessing={isProcessingFeedback}
+            />
+          )}
+
+          {slides.length > 0 && !isLoading && (
+            <div style={{ textAlign: 'center', marginTop: '40px' }}>
+              <Button onClick={handleDownload} style={{ 
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                fontSize: '18px', 
+                padding: '16px 32px' 
+              }}>
+                📥 Download Presentation ({slides.length} slides)
+              </Button>
+            </div>
+          )}
+
+          <style jsx>{`
+            @keyframes loading {
+              0% { transform: translateX(-100%); }
+              50% { transform: translateX(200%); }
+              100% { transform: translateX(300%); }
+            }
+          `}</style>
+        </main>
       )}
-
-      <style jsx>{`
-        @keyframes loading {
-          0% { transform: translateX(-100%); }
-          50% { transform: translateX(200%); }
-          100% { transform: translateX(300%); }
-        }
-      `}</style>
-    </main>
+    </>
   );
 }

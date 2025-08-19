@@ -2,7 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { generateSlideImage } from "./imageGenerator";
-import { getPlaceholderImage } from "./geminiImageGenerator";
+import { generateSlideImageWithGemini, getPlaceholderImage } from "./geminiImageGenerator";
 
 // Define the State
 interface Slide {
@@ -15,6 +15,8 @@ interface Slide {
 
 interface GraphState {
   topic: string;
+  template: string;
+  imageProvider: string;
   outline: string[];
   slides: Slide[];
   current_slide: number;
@@ -109,16 +111,29 @@ const generateSlideContent = async (state: GraphState): Promise<GraphState> => {
     }
     
     // Generate image for the slide (with timeout fallback)
-    console.log(`Generating image for slide: ${slideContent.title}`);
+    console.log(`Generating image for slide: ${slideContent.title} using ${state.imageProvider}`);
     try {
-      // Try to generate a real image with Hugging Face
-      const imageUrl = await Promise.race([
-        generateSlideImage(slideContent.title, slideContent.content),
-        // 10 second timeout for image generation
-        new Promise<string>((resolve) => 
-          setTimeout(() => resolve(getPlaceholderImage(slideContent.title)), 10000)
-        )
-      ]);
+      let imageUrl: string | null;
+      
+      if (state.imageProvider === 'gemini') {
+        // Use Gemini/Vertex AI image generation
+        imageUrl = await Promise.race([
+          generateSlideImageWithGemini(slideContent.title, slideContent.content),
+          // 15 second timeout for Gemini image generation
+          new Promise<string>((resolve) => 
+            setTimeout(() => resolve(getPlaceholderImage(slideContent.title)), 15000)
+          )
+        ]);
+      } else {
+        // Use Hugging Face image generation (default)
+        imageUrl = await Promise.race([
+          generateSlideImage(slideContent.title, slideContent.content),
+          // 10 second timeout for Hugging Face image generation
+          new Promise<string>((resolve) => 
+            setTimeout(() => resolve(getPlaceholderImage(slideContent.title)), 10000)
+          )
+        ]);
+      }
       
       const slideWithImage = {
         ...slideContent,
@@ -252,9 +267,11 @@ const moveToNextSlide = (state: GraphState): GraphState => {
 
 // Simplified app implementation without LangGraph for now
 export const app = {
-  async *stream(inputs: Pick<GraphState, 'topic'>) {
+  async *stream(inputs: Pick<GraphState, 'topic' | 'template' | 'imageProvider'>) {
     let state: GraphState = {
       topic: inputs.topic,
+      template: inputs.template || 'modern',
+      imageProvider: inputs.imageProvider || 'huggingface',
       outline: [],
       slides: [],
       current_slide: 0
