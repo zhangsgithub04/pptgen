@@ -5,6 +5,7 @@ import PptxGenJS from 'pptxgenjs';
 import LoginForm from '../components/LoginForm';
 import TemplateSelection, { PresentationTemplate } from '../components/TemplateSelection';
 import SlideFeedback from '../components/SlideFeedback';
+import PPTPreview from '../components/PPTPreview';
 
 // --- Shadcn UI Components (placeholders, you would install these) ---
 // To keep this file self-contained, we'll use basic HTML elements.
@@ -85,6 +86,7 @@ export default function Home() {
   const [isProcessingFeedback, setIsProcessingFeedback] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number>(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Check if user is already authenticated (persist login in session)
   useEffect(() => {
@@ -93,6 +95,18 @@ export default function Home() {
       setIsAuthenticated(true);
     }
   }, []);
+
+  // Keyboard event handling for preview
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showPreview) {
+        setShowPreview(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showPreview]);
 
   const handleLogin = (success: boolean) => {
     if (success) {
@@ -676,13 +690,20 @@ export default function Home() {
           )}
 
           {slides.length > 0 && !isLoading && (
-            <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <div style={{ textAlign: 'center', marginTop: '40px', display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button onClick={() => setShowPreview(true)} style={{ 
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+                fontSize: '18px', 
+                padding: '16px 32px' 
+              }}>
+                👁️ Preview Presentation ({slides.length} slides)
+              </Button>
               <Button onClick={handleDownload} style={{ 
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
                 fontSize: '18px', 
                 padding: '16px 32px' 
               }}>
-                📥 Download Presentation ({slides.length} slides)
+                📥 Download Presentation
               </Button>
             </div>
           )}
@@ -695,6 +716,15 @@ export default function Home() {
             }
           `}</style>
         </main>
+      )}
+
+      {/* PowerPoint Preview Modal */}
+      {showPreview && slides.length > 0 && (
+        <PPTPreview 
+          slides={slides}
+          onDownload={handleDownload}
+          onClose={() => setShowPreview(false)}
+        />
       )}
     </>
   );
