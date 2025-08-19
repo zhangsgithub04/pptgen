@@ -4,6 +4,7 @@ import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { generateSlideImage } from "../../../lib/imageGenerator";
 import { getPlaceholderImage } from "../../../lib/geminiImageGenerator";
+import { tokenTracker, generateSessionId, estimateTokenCount } from "../../../lib/tokenTracker";
 
 interface Slide {
   title: string;
@@ -28,6 +29,48 @@ const getLLM = () => {
   return new ChatOpenAI({ temperature: 0.4, modelName: "gpt-4o" });
 };
 
+// Wrapper function for LLM calls with token tracking
+async function invokeWithTracking(
+  chain: any,
+  inputs: any,
+  sessionId: string | undefined,
+  operation: string
+): Promise<any> {
+  const startTime = Date.now();
+  
+  // Estimate input tokens
+  const inputText = typeof inputs === 'string' ? inputs : JSON.stringify(inputs);
+  const inputTokens = estimateTokenCount(inputText);
+  
+  try {
+    const result = await chain.invoke(inputs);
+    
+    // Estimate output tokens
+    const outputText = typeof result === 'string' ? result : JSON.stringify(result);
+    const outputTokens = estimateTokenCount(outputText);
+    const totalTokens = inputTokens + outputTokens;
+    
+    // Track usage if session ID is available
+    if (sessionId) {
+      tokenTracker.trackTokenUsage(sessionId, {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        model: 'gpt-4o',
+        operation
+      });
+    }
+    
+    const duration = Date.now() - startTime;
+    console.log(`⚡ ${operation} completed in ${duration}ms - ${totalTokens} tokens`);
+    
+    return result;
+  } catch (error) {
+    console.error(`❌ ${operation} failed:`, error);
+    throw error;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { slides, feedback, slideIndex, template }: FeedbackRequest = await req.json();
@@ -39,6 +82,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Create or reuse session ID for tracking
+    const sessionId = generateSessionId();
+    tokenTracker.createSession(sessionId);
+    console.log(`📊 Feedback tracking session: ${sessionId}`);
+
     // Determine if this is global feedback or specific slide feedback
     const isSpecificSlide = slideIndex !== undefined && slideIndex >= 0 && slideIndex < slides.length;
 
@@ -47,7 +95,7 @@ export async function POST(req: NextRequest) {
     if (isSpecificSlide) {
       // Apply feedback to specific slide
       const slideToUpdate = slides[slideIndex!];
-      const updatedSlide = await applyFeedbackToSlide(slideToUpdate, feedback, template);
+      const updatedSlide = await applyFeedbackToSlide(slideToUpdate, feedback, template, slideIndex, sessionId);
       
       updatedSlides = slides.map((slide, index) => 
         index === slideIndex ? updatedSlide : slide
@@ -55,7 +103,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Apply feedback to all slides
       updatedSlides = await Promise.all(
-        slides.map((slide, index) => applyFeedbackToSlide(slide, feedback, template, index + 1))
+        slides.map((slide, index) => applyFeedbackToSlide(slide, feedback, template, index + 1, sessionId))
       );
     }
 
@@ -74,7 +122,8 @@ async function applyFeedbackToSlide(
   slide: Slide, 
   feedback: string, 
   template?: { name: string; promptPrefix: string },
-  slideNumber?: number
+  slideNumber?: number,
+  sessionId?: string
 ): Promise<Slide> {
   const prompt = ChatPromptTemplate.fromTemplate(`
 You are a professional presentation expert. Apply the following human feedback to improve a slide.

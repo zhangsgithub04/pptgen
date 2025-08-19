@@ -1,5 +1,6 @@
 import { app } from "@/lib/graph";
 import { NextRequest, NextResponse } from "next/server";
+import { tokenTracker, generateSessionId } from "@/lib/tokenTracker";
 
 export async function POST(req: NextRequest) {
   try {
@@ -8,6 +9,10 @@ export async function POST(req: NextRequest) {
     if (!topic) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
     }
+
+    // Create a new tracking session
+    const sessionId = generateSessionId();
+    tokenTracker.createSession(sessionId);
 
     // This is the input for our graph.
     const inputs = {
@@ -18,9 +23,11 @@ export async function POST(req: NextRequest) {
       imageProvider: imageProvider || 'huggingface', // Default to Hugging Face
       slides: [], // Start with empty slides
       current_slide: 0, // Start at the first slide
+      sessionId, // Pass session ID for tracking
     };
 
     console.log(`Starting presentation generation for topic: ${topic}, template: ${template?.name}, theme: ${theme?.name}, language: ${language}, imageProvider: ${imageProvider}`);
+    console.log(`📊 Tracking session: ${sessionId}`);
 
     // We will stream the output of the graph back to the client.
     const stream = await app.stream(inputs);
@@ -37,6 +44,20 @@ export async function POST(req: NextRequest) {
             console.log(`Streaming event: ${Object.keys(event)[0]}`);
             controller.enqueue(new TextEncoder().encode(chunk));
           }
+          
+          // Send usage report at the end
+          const usageReport = tokenTracker.getUsageReport(sessionId);
+          console.log('\n' + usageReport);
+          
+          const usageChunk = `data: ${JSON.stringify({ 
+            usage_report: usageReport,
+            session_id: sessionId,
+            usage_summary: tokenTracker.getSessionUsage(sessionId)
+          })}
+
+`;
+          controller.enqueue(new TextEncoder().encode(usageChunk));
+          
           console.log('Stream completed successfully');
         } catch (streamError: any) {
           console.error('Error in stream processing:', streamError);

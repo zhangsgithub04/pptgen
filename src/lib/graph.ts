@@ -3,6 +3,7 @@ import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { generateSlideImage } from "./imageGenerator";
 import { generateSlideImageWithGemini, getPlaceholderImage } from "./geminiImageGenerator";
+import { tokenTracker, estimateTokenCount } from "./tokenTracker";
 
 // Define the State
 interface Slide {
@@ -22,12 +23,55 @@ interface GraphState {
   outline: string[];
   slides: Slide[];
   current_slide: number;
+  sessionId?: string; // Add session ID for tracking
 }
 
 // Lazy initialization to avoid API key requirement during build
 const getLLM = () => {
   return new ChatOpenAI({ temperature: 0.4, modelName: "gpt-4o" });
 };
+
+// Wrapper function for LLM calls with token tracking
+async function invokeWithTracking(
+  chain: any,
+  inputs: any,
+  sessionId: string | undefined,
+  operation: string
+): Promise<any> {
+  const startTime = Date.now();
+  
+  // Estimate input tokens
+  const inputText = typeof inputs === 'string' ? inputs : JSON.stringify(inputs);
+  const inputTokens = estimateTokenCount(inputText);
+  
+  try {
+    const result = await chain.invoke(inputs);
+    
+    // Estimate output tokens
+    const outputText = typeof result === 'string' ? result : JSON.stringify(result);
+    const outputTokens = estimateTokenCount(outputText);
+    const totalTokens = inputTokens + outputTokens;
+    
+    // Track usage if session ID is available
+    if (sessionId) {
+      tokenTracker.trackTokenUsage(sessionId, {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        model: 'gpt-4o',
+        operation
+      });
+    }
+    
+    const duration = Date.now() - startTime;
+    console.log(`⚡ ${operation} completed in ${duration}ms - ${totalTokens} tokens`);
+    
+    return result;
+  } catch (error) {
+    console.error(`❌ ${operation} failed:`, error);
+    throw error;
+  }
+}
 
 /**
  * Generates the presentation outline based on the topic.
@@ -72,10 +116,15 @@ Example: ["Introduction to Topic", "Core Principles", "Key Applications", "Curre
   const chain = prompt.pipe(getLLM()).pipe(new JsonOutputParser<string[]>());
   
   try {
-    const outline = await chain.invoke({ 
-      topic: state.topic,
-      templatePrefix: isChineseMode ? state.template?.promptPrefixCN : state.template?.promptPrefix
-    });
+    const outline = await invokeWithTracking(
+      chain,
+      { 
+        topic: state.topic,
+        templatePrefix: isChineseMode ? state.template?.promptPrefixCN : state.template?.promptPrefix
+      },
+      state.sessionId,
+      'generate_outline'
+    );
     
     // Validate we got an array
     if (!Array.isArray(outline) || outline.length === 0) {
@@ -149,7 +198,12 @@ Example:
   const chain = prompt.pipe(getLLM()).pipe(new JsonOutputParser<Omit<Slide, 'critique'>>());
   
   try {
-    const slideContent = await chain.invoke({ topic, slide_title });
+    const slideContent = await invokeWithTracking(
+      chain,
+      { topic, slide_title },
+      state.sessionId,
+      'generate_slide_content'
+    );
     
     // Validate the response has required fields
     if (!slideContent.title || !slideContent.content) {
@@ -160,6 +214,7 @@ Example:
     console.log(`Generating image for slide: ${slideContent.title} using ${state.imageProvider}`);
     try {
       let imageUrl: string | null;
+      let imageSuccess = false;
       
       if (state.imageProvider === 'gemini') {
         // Use Gemini/Vertex AI image generation
@@ -170,6 +225,18 @@ Example:
             setTimeout(() => resolve(getPlaceholderImage(slideContent.title)), 15000)
           )
         ]);
+        imageSuccess = imageUrl !== null && !imageUrl.startsWith('data:image/svg+xml');
+        
+        // Track image generation
+        if (state.sessionId) {
+          tokenTracker.trackImageGeneration(state.sessionId, {
+            provider: 'gemini',
+            model: 'imagegeneration',
+            operation: 'slide_image_generation',
+            imageCount: 1,
+            success: imageSuccess
+          });
+        }
       } else {
         // Use Hugging Face image generation (default)
         imageUrl = await Promise.race([
@@ -179,6 +246,18 @@ Example:
             setTimeout(() => resolve(getPlaceholderImage(slideContent.title)), 10000)
           )
         ]);
+        imageSuccess = imageUrl !== null && !imageUrl.startsWith('data:image/svg+xml');
+        
+        // Track image generation
+        if (state.sessionId) {
+          tokenTracker.trackImageGeneration(state.sessionId, {
+            provider: 'huggingface',
+            model: 'black-forest-labs/FLUX.1-schnell',
+            operation: 'slide_image_generation',
+            imageCount: 1,
+            success: imageSuccess
+          });
+        }
       }
       
       const slideWithImage = {
@@ -233,10 +312,15 @@ const critiqueSlide = async (state: GraphState): Promise<GraphState> => {
   const chain = prompt.pipe(getLLM()).pipe(new JsonOutputParser<{ revision_needed: boolean; critique: string }>());
   
   try {
-    const critiqueResult = await chain.invoke({
-      title: slide_to_critique.title,
-      content: slide_to_critique.content
-    });
+    const critiqueResult = await invokeWithTracking(
+      chain,
+      {
+        title: slide_to_critique.title,
+        content: slide_to_critique.content
+      },
+      state.sessionId,
+      'critique_slide'
+    );
 
     // Update the specific slide with the critique
     const updatedSlides = [...state.slides];
@@ -279,12 +363,17 @@ const refineSlide = async (state: GraphState): Promise<GraphState> => {
     const chain = prompt.pipe(getLLM()).pipe(new JsonOutputParser<Omit<Slide, 'critique'>>());
     
     try {
-        const refinedContent = await chain.invoke({ 
-            topic,
-            title: slide_to_refine.title,
-            content: slide_to_refine.content,
-            critique: slide_to_refine.critique || 'No critique provided'
-        });
+        const refinedContent = await invokeWithTracking(
+            chain,
+            { 
+                topic,
+                title: slide_to_refine.title,
+                content: slide_to_refine.content,
+                critique: slide_to_refine.critique || 'No critique provided'
+            },
+            state.sessionId,
+            'refine_slide'
+        );
 
         // Replace the old slide with the refined one
         const updatedSlides = [...state.slides];
