@@ -2,226 +2,174 @@
 
 import React from 'react';
 
+export type SystemTheme = 'light' | 'dark' | 'system';
+
 export interface Theme {
-  id: string;
-  name: string;
-  nameCN: string;
+  mode: SystemTheme;
   colors: {
+    background: string;
+    surface: string;
     primary: string;
     secondary: string;
     accent: string;
-    background: string;
     text: string;
     textSecondary: string;
-  };
-  fonts: {
-    title: string;
-    content: string;
+    border: string;
+    hover: string;
   };
 }
 
-export const themes: Theme[] = [
-  {
-    id: 'modern-blue',
-    name: 'Modern Blue',
-    nameCN: '现代蓝',
-    colors: {
-      primary: '#3b82f6',
-      secondary: '#1e40af',
-      accent: '#60a5fa',
-      background: '#ffffff',
-      text: '#1f2937',
-      textSecondary: '#6b7280'
-    },
-    fonts: {
-      title: 'Arial, sans-serif',
-      content: 'Arial, sans-serif'
-    }
-  },
-  {
-    id: 'corporate-dark',
-    name: 'Corporate Dark',
-    nameCN: '企业深色',
-    colors: {
-      primary: '#1f2937',
-      secondary: '#374151',
-      accent: '#10b981',
-      background: '#ffffff',
-      text: '#1f2937',
-      textSecondary: '#6b7280'
-    },
-    fonts: {
-      title: 'Arial, sans-serif',
-      content: 'Arial, sans-serif'
-    }
-  },
-  {
-    id: 'vibrant-purple',
-    name: 'Vibrant Purple',
-    nameCN: '活力紫',
-    colors: {
-      primary: '#8b5cf6',
-      secondary: '#7c3aed',
-      accent: '#a78bfa',
-      background: '#ffffff',
-      text: '#1f2937',
-      textSecondary: '#6b7280'
-    },
-    fonts: {
-      title: 'Arial, sans-serif',
-      content: 'Arial, sans-serif'
-    }
-  },
-  {
-    id: 'elegant-green',
-    name: 'Elegant Green',
-    nameCN: '优雅绿',
-    colors: {
-      primary: '#059669',
-      secondary: '#047857',
-      accent: '#10b981',
-      background: '#ffffff',
-      text: '#1f2937',
-      textSecondary: '#6b7280'
-    },
-    fonts: {
-      title: 'Arial, sans-serif',
-      content: 'Arial, sans-serif'
-    }
-  },
-  {
-    id: 'warm-orange',
-    name: 'Warm Orange',
-    nameCN: '温暖橙',
-    colors: {
-      primary: '#ea580c',
-      secondary: '#c2410c',
-      accent: '#fb923c',
-      background: '#ffffff',
-      text: '#1f2937',
-      textSecondary: '#6b7280'
-    },
-    fonts: {
-      title: 'Arial, sans-serif',
-      content: 'Arial, sans-serif'
-    }
-  },
-  {
-    id: 'minimalist-gray',
-    name: 'Minimalist Gray',
-    nameCN: '极简灰',
-    colors: {
-      primary: '#64748b',
-      secondary: '#475569',
-      accent: '#94a3b8',
-      background: '#ffffff',
-      text: '#1f2937',
-      textSecondary: '#6b7280'
-    },
-    fonts: {
-      title: 'Arial, sans-serif',
-      content: 'Arial, sans-serif'
-    }
+export const getSystemTheme = (): 'light' | 'dark' => {
+  if (typeof window === 'undefined') return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
+export const getThemeColors = (themeMode: SystemTheme): Theme => {
+  const actualMode = themeMode === 'system' ? getSystemTheme() : themeMode;
+  
+  if (actualMode === 'dark') {
+    return {
+      mode: themeMode,
+      colors: {
+        background: '#0f172a',
+        surface: '#1e293b',
+        primary: '#3b82f6',
+        secondary: '#1e40af',
+        accent: '#60a5fa',
+        text: '#f8fafc',
+        textSecondary: '#cbd5e1',
+        border: '#334155',
+        hover: '#475569'
+      }
+    };
+  } else {
+    return {
+      mode: themeMode,
+      colors: {
+        background: '#ffffff',
+        surface: '#f8fafc',
+        primary: '#3b82f6',
+        secondary: '#1e40af',
+        accent: '#60a5fa',
+        text: '#1e293b',
+        textSecondary: '#64748b',
+        border: '#e2e8f0',
+        hover: '#f1f5f9'
+      }
+    };
   }
-];
+};
 
 interface ThemeSelectorProps {
-  selectedTheme: Theme;
-  onThemeChange: (theme: Theme) => void;
+  selectedTheme: SystemTheme;
+  onThemeChange: (theme: SystemTheme) => void;
   language: 'en' | 'zh';
 }
 
 export default function ThemeSelector({ selectedTheme, onThemeChange, language }: ThemeSelectorProps) {
+  const currentTheme = getThemeColors(selectedTheme);
+  
+  const themes: { mode: SystemTheme; name: string; nameCN: string; icon: string; description: string; descriptionCN: string }[] = [
+    {
+      mode: 'light',
+      name: 'Light',
+      nameCN: '浅色',
+      icon: '☀️',
+      description: 'Clean and bright interface',
+      descriptionCN: '清洁明亮的界面'
+    },
+    {
+      mode: 'dark',
+      name: 'Dark',
+      nameCN: '深色',
+      icon: '🌙',
+      description: 'Easy on the eyes in low light',
+      descriptionCN: '在弱光环境下保护眼睛'
+    },
+    {
+      mode: 'system',
+      name: 'System',
+      nameCN: '跟随系统',
+      icon: '💻',
+      description: 'Follow your system preference',
+      descriptionCN: '跟随系统偏好设置'
+    }
+  ];
+
   return (
     <div style={{ marginBottom: '24px' }}>
       <h3 style={{ 
         fontSize: '18px', 
         fontWeight: '600', 
         marginBottom: '16px', 
-        color: '#1f2937' 
+        color: currentTheme.colors.text 
       }}>
-        {language === 'en' ? 'Choose Theme' : '选择主题'}
+        {language === 'en' ? '🎨 Theme Mode' : '🎨 主题模式'}
       </h3>
       
       <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-        gap: '12px' 
+        display: 'flex', 
+        gap: '12px',
+        flexWrap: 'wrap',
+        justifyContent: 'center'
       }}>
         {themes.map((theme) => (
-          <div
-            key={theme.id}
-            onClick={() => onThemeChange(theme)}
+          <button
+            key={theme.mode}
+            onClick={() => onThemeChange(theme.mode)}
             style={{
-              padding: '16px',
-              border: selectedTheme.id === theme.id ? `3px solid ${theme.colors.primary}` : '2px solid #e5e7eb',
+              padding: '16px 20px',
+              border: selectedTheme === theme.mode ? `2px solid ${currentTheme.colors.primary}` : `2px solid ${currentTheme.colors.border}`,
               borderRadius: '12px',
               cursor: 'pointer',
               transition: 'all 0.2s',
-              backgroundColor: selectedTheme.id === theme.id ? '#f8fafc' : '#ffffff',
-              boxShadow: selectedTheme.id === theme.id ? '0 8px 16px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)',
-              transform: selectedTheme.id === theme.id ? 'translateY(-2px)' : 'none'
+              backgroundColor: selectedTheme === theme.mode ? currentTheme.colors.primary + '10' : currentTheme.colors.surface,
+              color: currentTheme.colors.text,
+              minWidth: '120px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px'
             }}
             onMouseEnter={(e) => {
-              if (selectedTheme.id !== theme.id) {
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+              if (selectedTheme !== theme.mode) {
+                e.currentTarget.style.backgroundColor = currentTheme.colors.hover;
+                e.currentTarget.style.borderColor = currentTheme.colors.primary;
               }
             }}
             onMouseLeave={(e) => {
-              if (selectedTheme.id !== theme.id) {
-                e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+              if (selectedTheme !== theme.mode) {
+                e.currentTarget.style.backgroundColor = currentTheme.colors.surface;
+                e.currentTarget.style.borderColor = currentTheme.colors.border;
               }
             }}
           >
-            {/* Theme preview */}
-            <div style={{ 
-              display: 'flex', 
-              gap: '4px', 
-              marginBottom: '12px',
-              height: '20px'
-            }}>
-              <div style={{ 
-                flex: 1, 
-                backgroundColor: theme.colors.primary, 
-                borderRadius: '4px' 
-              }} />
-              <div style={{ 
-                flex: 1, 
-                backgroundColor: theme.colors.secondary, 
-                borderRadius: '4px' 
-              }} />
-              <div style={{ 
-                flex: 1, 
-                backgroundColor: theme.colors.accent, 
-                borderRadius: '4px' 
-              }} />
-            </div>
-            
-            {/* Theme name */}
+            <div style={{ fontSize: '24px' }}>{theme.icon}</div>
             <div style={{ 
               fontSize: '14px', 
-              fontWeight: '600', 
-              color: theme.colors.text,
-              textAlign: 'center'
+              fontWeight: '600',
+              color: selectedTheme === theme.mode ? currentTheme.colors.primary : currentTheme.colors.text
             }}>
               {language === 'en' ? theme.name : theme.nameCN}
             </div>
-            
-            {/* Selected indicator */}
-            {selectedTheme.id === theme.id && (
+            <div style={{ 
+              fontSize: '12px', 
+              color: currentTheme.colors.textSecondary,
+              lineHeight: '1.3'
+            }}>
+              {language === 'en' ? theme.description : theme.descriptionCN}
+            </div>
+            {selectedTheme === theme.mode && (
               <div style={{
-                marginTop: '8px',
-                textAlign: 'center',
                 fontSize: '12px',
-                color: theme.colors.primary,
+                color: currentTheme.colors.primary,
                 fontWeight: '600'
               }}>
-                ✓ {language === 'en' ? 'Selected' : '已选择'}
+                ✓ {language === 'en' ? 'Active' : '当前'}
               </div>
             )}
-          </div>
+          </button>
         ))}
       </div>
     </div>
