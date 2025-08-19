@@ -83,6 +83,8 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isProcessingFeedback, setIsProcessingFeedback] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number>(0);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Check if user is already authenticated (persist login in session)
   useEffect(() => {
@@ -109,6 +111,7 @@ export default function Home() {
     setImageProvider('huggingface');
     setSlides([]);
     setError(null);
+    setSuccessMessage(null);
   };
 
   const handleLogout = () => {
@@ -118,6 +121,7 @@ export default function Home() {
     setImageProvider('huggingface');
     setSlides([]);
     setError(null);
+    setSuccessMessage(null);
     sessionStorage.removeItem('pptgen_authenticated');
   };
 
@@ -128,6 +132,9 @@ export default function Home() {
     setError(null);
 
     try {
+      console.log('🤖 Applying feedback:', feedback, 'to slide index:', slideIndex);
+      console.log('📊 Current slides before feedback:', slides.length);
+      
       const response = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,7 +155,22 @@ export default function Home() {
       }
 
       const result = await response.json();
-      setSlides(result.slides);
+      console.log('✅ Feedback API result:', result);
+      console.log('📊 Updated slides count:', result.slides?.length);
+      
+      if (result.slides && Array.isArray(result.slides)) {
+        setSlides([...result.slides]); // Force new array to trigger re-render
+        setLastUpdated(Date.now()); // Trigger visual update indicator
+        setSuccessMessage('✅ Feedback applied successfully! Slides have been updated.');
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => setSuccessMessage(null), 3000);
+        
+        console.log('🔄 UI updated with new slides');
+      } else {
+        console.error('❌ Invalid response format:', result);
+        throw new Error('Invalid response format: missing slides array');
+      }
 
     } catch (err: any) {
       console.error('Feedback processing failed:', err);
@@ -164,6 +186,7 @@ export default function Home() {
 
     setSlides([]);
     setError(null);
+    setSuccessMessage(null);
     setIsLoading(true);
 
     try {
@@ -510,6 +533,21 @@ export default function Home() {
             </div>
           )}
 
+          {successMessage && (
+            <div style={{ 
+              background: '#f0fff4', 
+              border: '1px solid #38a169', 
+              color: '#22543d', 
+              padding: '16px', 
+              borderRadius: '8px', 
+              marginBottom: '24px',
+              textAlign: 'center',
+              animation: 'slideUpdate 0.5s ease-in-out'
+            }}>
+              {successMessage}
+            </div>
+          )}
+
           {isLoading && (
             <div style={{ textAlign: 'center', margin: '40px 0' }}>
               <div style={{ fontSize: '18px', color: '#4a5568', marginBottom: '16px' }}>
@@ -560,7 +598,26 @@ export default function Home() {
 
           <div style={{ marginTop: '48px' }}>
             {slides.map((slide, index) => (
-              <Card key={index}>
+              <Card 
+                key={index}
+                style={{
+                  border: '1px solid #e1e5e9',
+                  borderRadius: '12px',
+                  padding: '24px',
+                  marginBottom: '24px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  backgroundColor: '#ffffff',
+                  display: 'flex',
+                  gap: '24px',
+                  alignItems: 'flex-start',
+                  transition: 'all 0.3s ease',
+                  ...(Date.now() - lastUpdated < 2000 && {
+                    backgroundColor: '#f0fff4',
+                    borderColor: '#38a169',
+                    boxShadow: '0 4px 20px rgba(56, 161, 105, 0.15)'
+                  })
+                }}
+              >
                 <SlideImage title={slide.title} imageUrl={slide.imageUrl} />
                 <div style={{ flex: 1 }}>
                   <CardHeader>
@@ -576,6 +633,19 @@ export default function Home() {
                       Slide {index + 1}
                     </span>
                     {slide.title}
+                    {Date.now() - lastUpdated < 2000 && (
+                      <span style={{
+                        marginLeft: '8px',
+                        padding: '2px 8px',
+                        background: '#38a169',
+                        color: 'white',
+                        fontSize: '12px',
+                        borderRadius: '12px',
+                        animation: 'pulse 1s infinite'
+                      }}>
+                        ✨ Updated
+                      </span>
+                    )}
                   </CardHeader>
                   <CardContent>{slide.content}</CardContent>
                   {slide.critique && (
